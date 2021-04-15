@@ -1,0 +1,141 @@
+#### BOOTSTRAP ####
+[bootstrap-resolver]
+protocol = "doh"
+address = "https://dns9.quad9.net:443/dns-query"
+bootstrap-address = "9.9.9.9"
+
+
+#### LISTENERS ####
+[listeners.dns-udp]
+address = ":53"
+protocol = "udp"
+resolver = "ecs"
+
+[listeners.dns-tcp]
+address = ":53"
+protocol = "tcp"
+resolver = "ecs"
+
+# ECS
+[groups.ecs]
+type = "ecs-modifier"
+resolvers = ["cache"]
+ecs-op = "delete"
+
+# Cache
+[groups.cache]
+type = "cache"
+resolvers = ["ttl"]
+cache-size = 4096
+cache-negative-ttl = 120
+gc-period = 60
+cache-answer-shuffle = "round-robin"
+cache-harden-below-nxdomain = true
+
+# TTL
+[groups.ttl]
+type = "ttl-modifier"
+resolvers = ["collapse"]
+ttl-min = 300 # 15 Minutes
+ttl-max = 43200 # 12 Hours
+
+[groups.collapse]
+type = "response-collapse"
+resolvers = ["minimize"]
+null-rcode = 3
+
+[groups.minimize]
+type = "response-minimize"
+resolvers = ["class-filter"]
+
+# Allowed Classes
+[routers.class-filter]
+routes = [
+	{class = "IN", resolver = "type-filter"},
+	{resolver = "nxdomain"},
+]
+
+# Allowed TYPEs
+[routers.type-filter]
+routes = [
+        {invert = true, class = "IN", resolver = "nxdomain"},
+        {invert = true, types = ["A", "AAAA", "CAA", "CNAME", "HTTPS", "MX", "NAPTR", "SRV", "SVCB", "TXT"], resolver = "nxdomain"},
+	{resolver = "blocklist"},
+]
+
+# Block/Allow QNAME
+[groups.blocklist]
+type = "blocklist-v2"
+resolvers = ["blocklist-response"]
+allowlist-resolver = "internet"
+allowlist-refresh = 86400
+allowlist-source = [
+	{format = "domain", source = "https://raw.githubusercontent.com/cbuijs/my-allowlist/master/routedns.allow.list", cache-dir = "/cache"},
+        {format = "domain", source = "https://raw.githubusercontent.com/cbuijs/accomplist/master/my-routedns/routedns.allowlist.justdomain.list", cache-dir = "/cache"},
+        {format = "domain", source = "https://raw.githubusercontent.com/cbuijs/accomplist/master/my-routedns/routedns.allowlist.domain.list", cache-dir = "/cache"},
+	{format = "domain", source = "https://raw.githubusercontent.com/cbuijs/accomplist/master/my-routedns/routedns.allowlist.gafam.domain.list", cache-dir = "/cache"},
+]
+blocklist-resolver = "null"
+blocklist-refresh = 86400
+blocklist-source = [
+        {format = "domain", source = "https://raw.githubusercontent.com/cbuijs/accomplist/master/my-routedns/routedns.blocklist.justdomain.list", cache-dir = "/cache"},
+	{format = "domain", source = "https://raw.githubusercontent.com/cbuijs/accomplist/master/my-routedns/routedns.blocklist.domain.list", cache-dir = "/cache"},
+]
+
+# Block DATA
+[groups.blocklist-response]
+type = "response-blocklist-name"
+resolvers = ["blocklist-ip"]
+blocklist-resolver = "null"
+blocklist-refresh = 86400
+blocklist-source = [
+	{format = "domain", source = "https://raw.githubusercontent.com/cbuijs/accomplist/master/cloak/routedns.blocklist.domain.list", cache-dir = "/cache"},
+]
+
+# Block IP-DATA
+[groups.blocklist-ip]
+type = "response-blocklist-ip"
+resolvers = ["internet"]
+filter = true
+blocklist-refresh = 86400
+blocklist-source = [
+	{format = "cidr", source = "https://raw.githubusercontent.com/cbuijs/accomplist/master/mal-ip-tiny/plain.black.ipcidr.list", cache-dir = "/cache"},
+]
+
+# Internet
+[resolvers.internet]
+protocol = "doh"
+address = "https://dns9.quad9.net:443/dns-query"
+
+# Static response NULL IP-Address
+[routers.null]
+routes = [
+	{ type = "A", resolver = "null-a" },
+	{ type = "AAAA", resolver = "null-aaaa" },
+	{ resolver = "nxdomain" },
+]
+
+[groups.null-a]
+type  = "static-responder"
+rcode = 0
+answer = [". 3600 IN A 0.0.0.0"]
+ns = [
+	"blocked. 3600 IN SOA blocked. blocked. 1 60 60 60 60"
+]
+
+[groups.null-aaaa]
+type  = "static-responder"
+rcode = 0
+answer = [". 3600 IN AAAA ::"]
+ns = [
+	"blocked. 3600 IN SOA blocked. blocked. 1 60 60 60 60"
+]
+
+# Static NXDOMAIN response
+[groups.nxdomain]
+type  = "static-responder"
+rcode = 3
+ns = [
+	"nxdomain. 3600 IN SOA nxdomain. nxdomain. 1 60 60 60 60"
+]
+
